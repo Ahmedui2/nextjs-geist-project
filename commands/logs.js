@@ -57,41 +57,41 @@ async function execute(message, args, { saveData, client, BOT_OWNERS }) {
   // Additional subcommand handling can be added here
 }
 
+const { ChannelType } = require('discord.js');
+
 async function handleInteraction(interaction, client, saveData) {
   if (!interaction.isButton()) return;
 
   const customId = interaction.customId;
 
   if (customId === 'auto_set') {
-    // Auto create channels for all log types and enable them
+    await interaction.deferReply({ ephemeral: true });
     const guild = interaction.guild;
+    let category = guild.channels.cache.find(c => c.name === 'res' && c.type === ChannelType.GuildCategory);
+    if (!category) {
+      category = await guild.channels.create({
+        name: 'res',
+        type: ChannelType.GuildCategory,
+        reason: 'Category for bot logs'
+      });
+    }
+
     for (const type of LOG_TYPES) {
-      if (!client.logConfig.settings[type].enabled) {
-        client.logConfig.settings[type].enabled = true;
+      client.logConfig.settings[type].enabled = true;
+      let channel = guild.channels.cache.find(c => c.name === `logs-${type.toLowerCase()}` && c.parentId === category.id);
+      if (!channel) {
+        channel = await guild.channels.create({
+          name: `logs-${type.toLowerCase()}`,
+          type: ChannelType.GuildText,
+          parent: category.id,
+          reason: 'Auto created log channel'
+        });
       }
-      if (!client.logConfig.settings[type].channelId) {
-        // Create channel named logs-<type> if not exists
-        let channel = guild.channels.cache.find(c => c.name === `logs-${type.toLowerCase()}` && c.type === 0);
-        if (!channel) {
-          channel = await guild.channels.create({
-            name: `logs-${type.toLowerCase()}`,
-            type: 0,
-            reason: 'Auto created log channel'
-          });
-        }
-        client.logConfig.settings[type].channelId = channel.id;
-      }
+      client.logConfig.settings[type].channelId = channel.id;
     }
+
     await saveData(client.points, client.responsibilities, client.logConfig);
-    try {
-      await interaction.update({ content: 'Channels auto-assigned for all log types.', components: [], embeds: [] });
-    } catch (error) {
-      if (error.code === 10062 || error.code === 40060) {
-        // Interaction already acknowledged or unknown interaction, ignore
-      } else {
-        console.error('Error updating interaction:', error);
-      }
-    }
+    await interaction.editReply({ content: 'Log channels have been automatically set up under the "res" category.' });
     return;
   }
 
