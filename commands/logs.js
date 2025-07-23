@@ -1,262 +1,146 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
-const { logEvent, EVENT_TYPES } = require('./logs_system');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ChannelType, PermissionsBitField } = require('discord.js');
+const { EVENT_TYPES } = require('./logs_system');
+const fs = require('fs');
+const path = require('path');
 
 const name = 'log';
+const logConfigFile = path.join(__dirname, '..', 'logConfig.json');
 
-const LOG_TYPES = Object.keys(EVENT_TYPES);
-
-async function execute(message, args, { saveData, client, BOT_OWNERS }) {
-  if (!BOT_OWNERS.includes(message.author.id)) {
-    return message.reply('**This command is for bot owners only!**');
-  }
-
-  // Initialize logConfig if not present
-  if (!client.logConfig) {
-    client.logConfig = {};
-  }
-  if (!client.logConfig.settings) {
-    client.logConfig.settings = {};
-    for (const type of LOG_TYPES) {
-      client.logConfig.settings[type] = { enabled: false, channelId: null };
+async function execute(message, args, { client, saveData }) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        return message.reply('**This command is for administrators only!**');
     }
-  }
 
-  if (args.length === 0) {
-    // Send a single embed summarizing all log types
+    await sendLogSettings(message.channel, client);
+}
+
+async function sendLogSettings(channel, client) {
+    const logConfig = client.logConfig;
+
     const embed = new EmbedBuilder()
-      .setTitle('Log Settings Overview')
-      .setColor('#0099ff');
+        .setTitle('Log Settings')
+        .setColor('#0099ff')
+        .setDescription('Here you can configure the logging system.');
 
-    let description = '';
-    for (const type of LOG_TYPES) {
-      const setting = client.logConfig.settings[type];
-      const eventName = EVENT_TYPES[type].name;
-      const status = setting.enabled ? 'Enabled' : 'Disabled';
-      const channelMention = setting.channelId ? `<#${setting.channelId}>` : 'No channel set';
-      description += `**${eventName}:** ${status} | Channel: ${channelMention}\n`;
-    }
-    embed.setDescription(description);
+    const fields = Object.keys(EVENT_TYPES).map(type => {
+        const setting = logConfig.settings[type] || { enabled: false, channelId: null };
+        const status = setting.enabled ? 'Enabled' : 'Disabled';
+        const channelMention = setting.channelId ? `<#${setting.channelId}>` : 'Not set';
+        return {
+            name: EVENT_TYPES[type].name,
+            value: `Status: **${status}**\nChannel: ${channelMention}`,
+            inline: true
+        };
+    });
 
-    // Buttons for interaction (e.g., refresh, settings)
-    const refreshButton = new ButtonBuilder()
-      .setCustomId('refresh_logs')
-      .setLabel('Refresh')
-      .setStyle(ButtonStyle.Primary);
+    embed.addFields(fields);
 
-    const settingsButton = new ButtonBuilder()
-      .setCustomId('settings_logs')
-      .setLabel('Settings')
-      .setStyle(ButtonStyle.Secondary);
+    const menu = new StringSelectMenuBuilder()
+        .setCustomId('log_type_select')
+        .setPlaceholder('Select a log type to configure')
+        .addOptions(
+            Object.keys(EVENT_TYPES).map(type => ({
+                label: EVENT_TYPES[type].name,
+                value: type
+            }))
+        );
 
-    const row = new ActionRowBuilder().addComponents(refreshButton, settingsButton);
+    const row1 = new ActionRowBuilder().addComponents(menu);
 
-    await message.reply({ embeds: [embed], components: [row] });
-    return;
-  }
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('auto_set_logs')
+            .setLabel('Auto Set')
+            .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+            .setCustomId('disable_all_logs')
+            .setLabel('Disable All')
+            .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+            .setCustomId('refresh_logs')
+            .setLabel('Refresh')
+            .setStyle(ButtonStyle.Primary)
+    );
 
-  // Additional subcommand handling can be added here
+    await channel.send({ embeds: [embed], components: [row1, row2] });
 }
 
 async function handleInteraction(interaction, client, saveData) {
-  if (!interaction.isButton()) return;
+    const { customId } = interaction;
 
-  const customId = interaction.customId;
+    if (customId === 'refresh_logs') {
+        await interaction.message.delete();
+        await sendLogSettings(interaction.channel, client);
+        return interaction.reply({ content: 'Refreshed!', ephemeral: true });
+    }
 
-  if (customId === 'auto_set') {
-    // Auto create channels for all log types and enable them
-    const guild = interaction.guild;
-    for (const type of LOG_TYPES) {
-      if (!client.logConfig.settings[type].enabled) {
-        client.logConfig.settings[type].enabled = true;
-      }
-      if (!client.logConfig.settings[type].channelId) {
-        // Create channel named logs-<type> if not exists
-        let channel = guild.channels.cache.find(c => c.name === `logs-${type.toLowerCase()}` && c.type === 0);
-        if (!channel) {
-          channel = await guild.channels.create({
-            name: `logs-${type.toLowerCase()}`,
-            type: 0,
-            reason: 'Auto created log channel'
-          });
+    if (customId === 'auto_set_logs') {
+        await interaction.deferReply({ ephemeral: true });
+        const guild = interaction.guild;
+        let category = guild.channels.cache.find(c => c.name === 'res-logs' && c.type === ChannelType.GuildCategory);
+        if (!category) {
+            category = await guild.channels.create({
+                name: 'res-logs',
+                type: ChannelType.GuildCategory,
+            });
         }
-        client.logConfig.settings[type].channelId = channel.id;
-      }
-    }
-    await saveData(client.points, client.responsibilities, client.logConfig);
-    try {
-      await interaction.update({ content: 'Channels auto-assigned for all log types.', components: [], embeds: [] });
-    } catch (error) {
-      if (error.code === 10062 || error.code === 40060) {
-        // Interaction already acknowledged or unknown interaction, ignore
-      } else {
-        console.error('Error updating interaction:', error);
-      }
-    }
-    return;
-  }
 
-  if (customId === 'disable_all') {
-    // Disable all log types and remove channels
-    for (const type of LOG_TYPES) {
-      client.logConfig.settings[type].enabled = false;
-      // Delete the channel if exists
-      if (client.logConfig.settings[type].channelId) {
-        try {
-          const channel = await interaction.guild.channels.fetch(client.logConfig.settings[type].channelId);
-          if (channel) {
-            await channel.delete('Disabling all log channels');
-          }
-        } catch (error) {
-          console.error(`Failed to delete log channel for ${type}:`, error);
+        for (const type of Object.keys(EVENT_TYPES)) {
+            const channelName = EVENT_TYPES[type].name.toLowerCase().replace(/ /g, '-');
+            let channel = guild.channels.cache.find(c => c.name === channelName && c.parentId === category.id);
+            if (!channel) {
+                channel = await guild.channels.create({
+                    name: channelName,
+                    type: ChannelType.GuildText,
+                    parent: category.id,
+                });
+            }
+            client.logConfig.settings[type] = { enabled: true, channelId: channel.id };
         }
-      }
-      client.logConfig.settings[type].channelId = null;
-    }
-    await saveData(client.points, client.responsibilities, client.logConfig);
-    try {
-      await interaction.update({ content: 'All log types disabled and channels deleted.', components: [], embeds: [] });
-    } catch (error) {
-      if (error.code === 10062 || error.code === 40060) {
-        // Interaction already acknowledged or unknown interaction, ignore
-      } else {
-        console.error('Error updating interaction:', error);
-      }
-    }
-    return;
-  }
 
-  if (customId.startsWith('toggle_')) {
-    const type = customId.replace('toggle_', '');
-    if (!LOG_TYPES.includes(type)) {
-      await interaction.reply({ content: 'Unknown log type.', ephemeral: true });
-      return;
-    }
-    // Toggle enabled state
-    client.logConfig.settings[type].enabled = !client.logConfig.settings[type].enabled;
-    await saveData(client.points, client.responsibilities, client.logConfig);
-
-    // Update embed and buttons
-    const embed = new EmbedBuilder()
-      .setTitle('Log Settings Overview')
-      .setColor('#0099ff');
-
-    let description = '';
-    for (const t of LOG_TYPES) {
-      const setting = client.logConfig.settings[t];
-      const eventName = EVENT_TYPES[t].name;
-      const status = setting.enabled ? 'Enabled' : 'Disabled';
-      const channelMention = setting.channelId ? `<#${setting.channelId}>` : 'No channel set';
-      description += `**${eventName}:** ${status} | Channel: ${channelMention}\n`;
-    }
-    embed.setDescription(description);
-
-    const buttons = [];
-    for (const t of LOG_TYPES) {
-      buttons.push(
-        new ButtonBuilder()
-          .setCustomId(`toggle_${t}`)
-          .setLabel(`${EVENT_TYPES[t].name}`)
-          .setStyle(client.logConfig.settings[t].enabled ? ButtonStyle.Success : ButtonStyle.Secondary)
-      );
-    }
-    buttons.push(
-      new ButtonBuilder()
-        .setCustomId('auto_set')
-        .setLabel('Auto Set')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('disable_all')
-        .setLabel('Disable All')
-        .setStyle(ButtonStyle.Danger)
-    );
-
-    const rows = [];
-    for (let i = 0; i < buttons.length; i += 5) {
-      rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+        saveData();
+        await interaction.message.delete();
+        await sendLogSettings(interaction.channel, client);
+        return interaction.editReply('Auto setup complete!');
     }
 
-    await interaction.update({ embeds: [embed], components: rows });
-    return;
-  }
-
-  if (customId.startsWith('set_channel_')) {
-    const type = customId.replace('set_channel_', '');
-    if (!LOG_TYPES.includes(type)) {
-      await interaction.reply({ content: 'Unknown log type.', ephemeral: true });
-      return;
-    }
-    // Prompt user to mention channel
-    await interaction.reply({ content: `Please mention the channel to set for log type: ${EVENT_TYPES[type].name}`, ephemeral: true });
-
-    const filter = m => m.author.id === interaction.user.id;
-    const collector = interaction.channel.createMessageCollector({ filter, time: 60000, max: 1 });
-
-    collector.on('collect', async msg => {
-      let channel = null;
-      if (msg.mentions.channels.size > 0) {
-        channel = msg.mentions.channels.first();
-      } else {
-        try {
-          channel = await interaction.guild.channels.fetch(msg.content.trim());
-        } catch {
-          await msg.reply('Channel not found. Please try again.');
-          return;
+    if (customId === 'disable_all_logs') {
+        await interaction.deferReply({ ephemeral: true });
+        for (const type of Object.keys(EVENT_TYPES)) {
+            client.logConfig.settings[type] = { enabled: false, channelId: null };
         }
-      }
-      if (!channel || !channel.isTextBased()) {
-        await msg.reply('Please mention a valid text channel or provide a valid channel ID.');
-        return;
-      }
-      client.logConfig.settings[type].channelId = channel.id;
-      await saveData(client.points, client.responsibilities, client.logConfig);
-      await msg.reply(`Log channel for ${EVENT_TYPES[type].name} set to ${channel}.`);
+        saveData();
+        await interaction.message.delete();
+        await sendLogSettings(interaction.channel, client);
+        return interaction.editReply('All logs disabled!');
+    }
 
-      // Update the settings embed
-      const embed = new EmbedBuilder()
-        .setTitle('Log Settings Overview')
-        .setColor('#0099ff');
+    if (interaction.isStringSelectMenu() && customId === 'log_type_select') {
+        const type = interaction.values[0];
+        const channelSelect = new StringSelectMenuBuilder()
+            .setCustomId(`log_channel_select_${type}`)
+            .setPlaceholder('Select a channel')
+            .addOptions(
+                interaction.guild.channels.cache
+                    .filter(c => c.type === ChannelType.GuildText)
+                    .map(c => ({
+                        label: c.name,
+                        value: c.id
+                    }))
+            );
+        const row = new ActionRowBuilder().addComponents(channelSelect);
+        await interaction.reply({ content: `Select a channel for ${EVENT_TYPES[type].name}`, components: [row], ephemeral: true });
+    }
 
-      let description = '';
-      for (const t of LOG_TYPES) {
-        const setting = client.logConfig.settings[t];
-        const eventName = EVENT_TYPES[t].name;
-        const status = setting.enabled ? 'Enabled' : 'Disabled';
-        const channelMention = setting.channelId ? `<#${setting.channelId}>` : 'No channel set';
-        description += `**${eventName}:** ${status} | Channel: ${channelMention}\n`;
-      }
-      embed.setDescription(description);
-
-      const buttons = [];
-      for (const t of LOG_TYPES) {
-        buttons.push(
-          new ButtonBuilder()
-            .setCustomId(`toggle_${t}`)
-            .setLabel(`${EVENT_TYPES[t].name}`)
-            .setStyle(client.logConfig.settings[t].enabled ? ButtonStyle.Success : ButtonStyle.Secondary)
-        );
-      }
-      buttons.push(
-        new ButtonBuilder()
-          .setCustomId('auto_set')
-          .setLabel('Auto Set')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('disable_all')
-          .setLabel('Disable All')
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      const rows = [];
-      for (let i = 0; i < buttons.length; i += 5) {
-        rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
-      }
-
-      await interaction.editReply({ embeds: [embed], components: rows });
-    });
-    return;
-  }
+    if (interaction.isStringSelectMenu() && customId.startsWith('log_channel_select_')) {
+        const type = customId.replace('log_channel_select_', '');
+        const channelId = interaction.values[0];
+        client.logConfig.settings[type] = { enabled: true, channelId: channelId };
+        saveData();
+        await interaction.message.delete();
+        await sendLogSettings(interaction.channel, client);
+        await interaction.reply({ content: `Set channel for ${EVENT_TYPES[type].name}`, ephemeral: true });
+    }
 }
 
 module.exports = { name, execute, handleInteraction };
-
-client.login(process.env.DISCORD_TOKEN);

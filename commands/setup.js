@@ -1,5 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { logEvent } = require('./logs_system');
+const { checkCooldown } = require('./cooldown');
 
 const name = 'setup';
 
@@ -423,29 +424,18 @@ async function handleImageSelection(interaction, imageUrl, responsibilities, mes
 
         buttonCollector.on('collect', async buttonInteraction => {
           try {
-            // Check cooldown
-            if (!client.responsibilityCooldown) {
-              client.responsibilityCooldown = { time: 0, users: {} };
-            }
-
-            const cooldownTime = client.responsibilityCooldown.time || 0;
-            const userId = buttonInteraction.user.id;
-            const now = Date.now();
-
-            if (cooldownTime > 0 && client.responsibilityCooldown.users[userId]) {
-              const timeLeft = client.responsibilityCooldown.users[userId] + cooldownTime - now;
-              if (timeLeft > 0) {
-                const secondsLeft = Math.ceil(timeLeft / 1000);
-                return buttonInteraction.reply({ 
-                  content: `**يجب الانتظار ${secondsLeft} ثانية قبل إرسال طلب آخر.**`, 
-                  flags: 64 
-                });
-              }
-            }
-
             const parts = buttonInteraction.customId.split('_');
             const responsibilityName = parts[2];
             const target = parts[3]; // userId or 'all'
+
+            // Check cooldown before showing modal
+            const cooldownTime = checkCooldown(buttonInteraction.user.id, responsibilityName);
+            if (cooldownTime > 0) {
+              return buttonInteraction.reply({
+                content: `**لقد استخدمت هذا الأمر مؤخرًا. يرجى الانتظار ${Math.ceil(cooldownTime / 1000)} ثانية أخرى.**`,
+                flags: 64
+              });
+            }
 
             // Show modal to enter reason only
             const modal = new ModalBuilder()
