@@ -20,15 +20,13 @@ const ADMIN_ROLES = process.env.ADMIN_ROLES ? process.env.ADMIN_ROLES.split(',')
 
 client.commands = new Collection();
 
-// Load commands from current directory (not commands folder)
-const commandFiles = fs.readdirSync(__dirname).filter(file => 
-  file.endsWith('.js') && 
-  !['bot.js', 'logs_system.js', 'save_data.js', 'notifications.js'].includes(file)
-);
+// Load commands from the "commands" folder
+const commandsPath = path.join(__dirname, 'commands');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
 for (const file of commandFiles) {
   try {
-    const command = require(path.join(__dirname, file));
+    const command = require(path.join(commandsPath, file));
     if ('name' in command && 'execute' in command) {
       client.commands.set(command.name, command);
       console.log(`Loaded command: ${command.name}`);

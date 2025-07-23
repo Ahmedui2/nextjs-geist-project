@@ -1,4 +1,5 @@
 const { ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { logEvent } = require('./logs_system');
 
 const name = 'مسؤول';
 
@@ -154,6 +155,17 @@ async function execute(message, args, { responsibilities, points, saveData, ADMI
       modal.addComponents(actionRow);
 
       await interaction.showModal(modal);
+
+      // Log the event
+      logEvent(client, interaction.guild, {
+        type: 'TASK_LOGS',
+        title: 'Contacting Responsible Member',
+        description: `An admin is contacting a responsible member for "${responsibilityName}".`,
+        user: interaction.user,
+        fields: [
+          { name: 'Target', value: target === 'all' ? 'All' : `<@${target}>` }
+        ]
+      });
     } catch (error) {
       console.error('Error in button collector:', error);
       try {
