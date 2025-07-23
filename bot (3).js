@@ -2,8 +2,9 @@ const { Client, GatewayIntentBits, Partials, Collection, ModalBuilder, TextInput
 const dotenv = require('dotenv');
 const fs = require('fs');
 const path = require('path');
-const { logEvent } = require('./logs_system');
-const { startReminderSystem } = require('./notifications');
+const { logEvent } = require('./commands/logs_system');
+const { startReminderSystem } = require('./commands/notifications');
+const { checkCooldown, startCooldown } = require('./commands/cooldown');
 
 dotenv.config();
 
@@ -102,17 +103,21 @@ if (!client.activeTasks) {
 client.on('interactionCreate', async interaction => {
   try {
     // Handle log system interactions
-    if (interaction.isButton() && (
-      interaction.customId.startsWith('toggle_') || 
-      interaction.customId === 'auto_set' || 
-      interaction.customId === 'disable_all' ||
-      interaction.customId.startsWith('set_channel_')
-    )) {
-      const logCommand = client.commands.get('log');
-      if (logCommand && logCommand.handleInteraction) {
-        await logCommand.handleInteraction(interaction, client, saveData);
-      }
-      return;
+    if (interaction.customId.startsWith('log_')) {
+        const logCommand = client.commands.get('log');
+        if (logCommand && logCommand.handleInteraction) {
+            await logCommand.handleInteraction(interaction, client, saveData);
+        }
+        return;
+    }
+
+    // Handle cooldown system interactions
+    if (interaction.customId.startsWith('cooldown_')) {
+        const cooldownCommand = client.commands.get('cooldown');
+        if (cooldownCommand && cooldownCommand.handleInteraction) {
+            await cooldownCommand.handleInteraction(interaction);
+        }
+        return;
     }
 
     // Handle claim buttons
@@ -180,33 +185,18 @@ client.on('interactionCreate', async interaction => {
         }
       }
 
-      // Log the task claimed event with channel info
-      if (client.logConfig && client.logConfig.settings && client.logConfig.settings['TASK_CLAIMED'] && client.logConfig.settings['TASK_CLAIMED'].enabled) {
-        const logChannelId = client.logConfig.settings['TASK_CLAIMED'].channelId;
-        if (logChannelId) {
-          const logGuild = client.guilds.cache.get(guild.id);
-          if (logGuild) {
-            logGuild.channels.fetch(logChannelId)
-              .then(channel => {
-                if (channel && channel.isTextBased()) {
-                  const embed = {
-                    title: 'Task Claimed',
-                    description: `Responsibility: **${responsibilityName}**`,
-                    color: 0x0099ff,
-                    timestamp: new Date(),
-                    fields: [
-                      { name: 'User', value: `<@${interaction.user.id}> (${displayName})`, inline: true },
-                      { name: 'Message', value: `The task has been claimed.` },
-                      { name: 'Requester Channel', value: `<#${interaction.channelId}>`, inline: true }
-                    ]
-                  };
-                  channel.send({ embeds: [embed] }).catch(console.error);
-                }
-              })
-              .catch(console.error);
-          }
-        }
-      }
+      // Log the task claimed event
+      logEvent(client, guild, {
+          type: 'TASK_LOGS',
+          title: 'Task Claimed',
+          description: `Responsibility: **${responsibilityName}**`,
+          user: interaction.user,
+          fields: [
+              { name: 'Claimed By', value: `<@${interaction.user.id}> (${displayName})`, inline: true },
+              { name: 'Requester', value: `<@${requesterId}>`, inline: true },
+              { name: 'Channel', value: `<#${interaction.channelId}>`, inline: true }
+          ]
+      });
 
       return;
     }
@@ -229,15 +219,17 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: '**لا يوجد مسؤولين معينين لهذه المسؤولية.**', flags: 64 });
       }
 
-      // Set cooldown for user
-      if (!client.responsibilityCooldown) {
-        client.responsibilityCooldown = { time: 0, users: {} };
-      }
-      const cooldownTime = client.responsibilityCooldown?.time || 0;
+      // Check cooldown
+      const cooldownTime = checkCooldown(interaction.user.id, responsibilityName);
       if (cooldownTime > 0) {
-        if (!client.responsibilityCooldown.users) client.responsibilityCooldown.users = {};
-        client.responsibilityCooldown.users[interaction.user.id] = Date.now();
+        return interaction.reply({
+          content: `**لقد استخدمت هذا الأمر مؤخرًا. يرجى الانتظار ${Math.ceil(cooldownTime / 1000)} ثانية أخرى.**`,
+          flags: 64
+        });
       }
+
+      // Start cooldown for user
+      startCooldown(interaction.user.id, responsibilityName);
 
       // Get stored image URL for this user
       const storedImageUrl = client.setupImageData?.get(interaction.user.id);
@@ -282,6 +274,18 @@ client.on('interactionCreate', async interaction => {
           await interaction.reply({ content: '**فشل في إرسال الرسالة الخاصة.**', flags: 64 });
         }
       }
+
+      // Log the task requested event
+        logEvent(client, interaction.guild, {
+            type: 'TASK_LOGS',
+            title: 'Task Requested',
+            description: `Responsibility: **${responsibilityName}**`,
+            user: interaction.user,
+            fields: [
+                { name: 'Reason', value: reason, inline: false },
+                { name: 'Target', value: target === 'all' ? 'All' : `<@${target}>`, inline: true }
+            ]
+        });
       return;
     }
 
