@@ -1,4 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { logEvent } = require('./logs_system');
 
 const name = 'settings';
 
@@ -146,8 +147,20 @@ async function execute(message, args, { responsibilities, saveData, BOT_OWNERS, 
       }
 
       if (action === 'delete') {
+        const deletedResponsibility = responsibilities[responsibilityName];
         delete responsibilities[responsibilityName];
         saveData();
+
+        logEvent(client, message.guild, {
+          type: 'RESPONSIBILITY_MANAGEMENT',
+          title: 'Responsibility Deleted',
+          description: `The responsibility "${responsibilityName}" has been deleted.`,
+          user: message.author,
+          fields: [
+            { name: 'Description', value: deletedResponsibility.description || 'N/A' }
+          ]
+        });
+
         await interaction.reply({ content: `**تم حذف المسؤولية: ${responsibilityName}**`, flags: 64 });
         
         // Return to main menu after deletion
@@ -238,6 +251,16 @@ async function execute(message, args, { responsibilities, saveData, BOT_OWNERS, 
         responsibles: []
       };
       saveData();
+
+      logEvent(client, message.guild, {
+        type: 'RESPONSIBILITY_MANAGEMENT',
+        title: 'Responsibility Created',
+        description: `A new responsibility "${name}" has been created.`,
+        user: message.author,
+        fields: [
+          { name: 'Description', value: desc || 'N/A' }
+        ]
+      });
       
       await interaction.reply({ content: `**تم إنشاء المسؤولية: ${name}**\n**الآن منشن المسؤولين أو أرسل معرفاتهم (افصل بينهم بفواصل):**`, flags: 64 });
       
@@ -307,8 +330,21 @@ async function execute(message, args, { responsibilities, saveData, BOT_OWNERS, 
         return interaction.reply({ content: '**المسؤولية غير موجودة!**', flags: 64 });
       }
 
+      const oldDesc = responsibilities[responsibilityName].description;
       responsibilities[responsibilityName].description = (!desc || desc.toLowerCase() === 'لا') ? '' : desc;
       saveData();
+
+      logEvent(client, message.guild, {
+        type: 'RESPONSIBILITY_MANAGEMENT',
+        title: 'Responsibility Description Updated',
+        description: `The description for "${responsibilityName}" has been updated.`,
+        user: message.author,
+        fields: [
+          { name: 'Old Description', value: oldDesc || 'N/A' },
+          { name: 'New Description', value: responsibilities[responsibilityName].description || 'N/A' }
+        ]
+      });
+
       await interaction.reply({ content: `**تم تعديل شرح المسؤولية: ${responsibilityName}**`, flags: 64 });
     } else if (interaction.customId.startsWith('manage_responsibles_modal_')) {
       const responsibilityName = interaction.customId.replace('manage_responsibles_modal_', '');
@@ -319,10 +355,23 @@ async function execute(message, args, { responsibilities, saveData, BOT_OWNERS, 
       }
 
       // Parse responsibles from input (IDs or mentions)
+      const oldResponsibles = responsibilities[responsibilityName].responsibles || [];
       const respIds = respText ? respText.split(',').map(s => s.trim().replace(/[<@!>]/g, '')).filter(s => s.length > 0) : [];
 
       responsibilities[responsibilityName].responsibles = respIds;
       saveData();
+
+      logEvent(client, message.guild, {
+        type: 'RESPONSIBLE_MEMBERS',
+        title: 'Responsible Members Updated',
+        description: `The responsible members for "${responsibilityName}" have been updated.`,
+        user: message.author,
+        fields: [
+          { name: 'Old Members', value: oldResponsibles.map(id => `<@${id}>`).join(', ') || 'None' },
+          { name: 'New Members', value: respIds.map(id => `<@${id}>`).join(', ') || 'None' }
+        ]
+      });
+
       await interaction.reply({ content: `**تم تحديث المسؤولين للمسؤولية: ${responsibilityName}**`, flags: 64 });
     }
   });

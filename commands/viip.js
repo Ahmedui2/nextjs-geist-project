@@ -1,4 +1,5 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ChannelType, ActivityType } = require('discord.js');
+const { logEvent } = require('./logs_system');
 
 const name = 'vip';
 
@@ -53,7 +54,20 @@ async function execute(message, args, { BOT_OWNERS, client, responsibilities, po
             const msgCollector = interaction.channel.createMessageCollector({ filter, time: 60000, max: 1 });
             msgCollector.on('collect', async msg => {
                 console.log(`Prefix changed to: ${msg.content.trim()}`);
+                const oldPrefix = client.prefix;
                 client.prefix = msg.content.trim();
+
+                logEvent(client, message.guild, {
+                    type: 'SETTINGS_LOGS',
+                    title: 'Bot Prefix Changed',
+                    description: `The bot prefix has been changed.`,
+                    user: message.author,
+                    fields: [
+                        { name: 'Old Prefix', value: oldPrefix },
+                        { name: 'New Prefix', value: client.prefix }
+                    ]
+                });
+
                 await msg.reply(`**تم تغيير البريفكس إلى: \`${client.prefix}\`**`);
             });
         }
@@ -62,6 +76,14 @@ async function execute(message, args, { BOT_OWNERS, client, responsibilities, po
             isPaused = !isPaused;
             client.isPaused = isPaused;
             console.log(`Bot pause status changed: ${isPaused}`);
+
+            logEvent(client, message.guild, {
+                type: 'SETTINGS_LOGS',
+                title: 'Bot Pause State Changed',
+                description: `The bot has been ${isPaused ? 'paused' : 'resumed'}.`,
+                user: message.author
+            });
+
             await interaction.update({ content: `**تم ${isPaused ? 'إيقاف البوت مؤقتاً ' : 'تشغيل البوت '}**`, embeds: [], components: [] });
         }
 
@@ -124,7 +146,20 @@ async function execute(message, args, { BOT_OWNERS, client, responsibilities, po
                     if (actInteraction.customId === 'stream' || actInteraction.customId === 'watch') {
                         options.url = 'https://www.twitch.tv/twitch';
                     }
+                    const oldActivity = client.user.presence.activities[0];
                     client.user.setActivity(msg.content, options);
+
+                    logEvent(client, message.guild, {
+                        type: 'SETTINGS_LOGS',
+                        title: 'Bot Activity Changed',
+                        description: `The bot's activity has been changed.`,
+                        user: message.author,
+                        fields: [
+                            { name: 'Old Activity', value: oldActivity ? `${oldActivity.type} ${oldActivity.name}` : 'None' },
+                            { name: 'New Activity', value: `${options.type} ${msg.content}` }
+                        ]
+                    });
+
                     await msg.reply('**Bot activity updated.**');
                 });
             });
@@ -137,7 +172,20 @@ async function execute(message, args, { BOT_OWNERS, client, responsibilities, po
                 const url = msg.attachments.first()?.url || msg.content;
                 console.log(`Avatar URL received: ${url}`);
                 if (!url.startsWith('http')) return msg.reply('**رابط غير صحيح!**');
+                const oldAvatar = client.user.avatarURL();
                 await client.user.setAvatar(url);
+
+                logEvent(client, message.guild, {
+                    type: 'SETTINGS_LOGS',
+                    title: 'Bot Avatar Changed',
+                    description: `The bot's avatar has been changed.`,
+                    user: message.author,
+                    fields: [
+                        { name: 'Old Avatar', value: oldAvatar },
+                        { name: 'New Avatar', value: url }
+                    ]
+                });
+
                 await msg.reply('**تم تغيير صورة البوت.**');
             });
         }
@@ -150,7 +198,20 @@ async function execute(message, args, { BOT_OWNERS, client, responsibilities, po
                 console.log(`Banner URL received: ${url}`);
                 if (!url.startsWith('http')) return msg.reply('**رابط غير صحيح!**');
                 try {
+                    const oldBanner = client.user.bannerURL();
                     await client.user.setBanner(url);
+
+                    logEvent(client, message.guild, {
+                        type: 'SETTINGS_LOGS',
+                        title: 'Bot Banner Changed',
+                        description: `The bot's banner has been changed.`,
+                        user: message.author,
+                        fields: [
+                            { name: 'Old Banner', value: oldBanner || 'None' },
+                            { name: 'New Banner', value: url }
+                        ]
+                    });
+
                     await msg.reply('**تم تغيير البنر.**');
                 } catch (err) {
                     console.error('Failed to set banner:', err);
