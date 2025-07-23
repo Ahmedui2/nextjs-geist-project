@@ -1,0 +1,66 @@
+{
+  "logChannelId": null,
+  "logRoles": [],
+  "settings": {
+    "RESPONSIBILITY_CREATED": {
+      "enabled": false,
+      "channelId": null
+    },
+    "RESPONSIBILITY_DELETED": {
+      "enabled": false,
+      "channelId": null
+    },
+    "RESPONSIBILITY_UPDATED": {
+      "enabled": false,
+      "channelId": null
+    },
+    "RESPONSIBLE_ADDED": {
+      "enabled": false,
+      "channelId": null
+    },
+    "RESPONSIBLE_REMOVED": {
+      "enabled": false,
+      "channelId": null
+    },
+    "TASK_CLAIMED": {
+      "enabled": false,
+      "channelId": null
+    },
+    "TASK_REQUESTED": {
+      "enabled": false,
+      "channelId": null
+    },
+    "POINTS_ADDED": {
+      "enabled": false,
+      "channelId": null
+    },
+    "POINTS_RESET": {
+      "enabled": false,
+      "channelId": null
+    },
+    "COOLDOWN_CHANGED": {
+      "enabled": false,
+      "channelId": null
+    },
+    "ADMIN_ROLE_ADDED": {
+      "enabled": false,
+      "channelId": null
+    },
+    "ADMIN_ROLE_REMOVED": {
+      "enabled": false,
+      "channelId": null
+    },
+    "BOT_STATUS_CHANGED": {
+      "enabled": false,
+      "channelId": null
+    },
+    "LOG_CHANNEL_SET": {
+      "enabled": false,
+      "channelId": null
+    },
+    "CUSTOM": {
+      "enabled": false,
+      "channelId": null
+    }
+  }
+}
